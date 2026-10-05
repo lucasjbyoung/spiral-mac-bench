@@ -1,0 +1,7 @@
+runs/
+__pycache__/
+*.ckpt
+*.tif
+*.tiff
+*.zarr/
+.DS_Store

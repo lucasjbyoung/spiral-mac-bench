@@ -1,0 +1,17 @@
+{
+  "z_begin": 4000,
+  "z_end": 17000,
+  "iterations": 401,
+  "config_overrides": {
+    "dense_spacing_mode": "grad_mag",
+    "loss_weight_dense_spacing_density": 0.0,
+    "loss_weight_dense_spacing": 0.0,
+    "input_use_gradient_magnitude": false,
+    "input_use_winding_inference": false,
+    "input_use_tracks": false,
+    "input_use_fiber_directions": false,
+    "input_use_verified_patches": true,
+    "input_use_normals": true,
+    "input_use_fibers": true
+  }
+}

@@ -1,0 +1,61 @@
+From e69e0153357be093eb0da7e10230457bee4fec2c Mon Sep 17 00:00:00 2001
+From: Lucas Young <lucas@lucasyoung.com>
+Date: Mon, 5 Oct 2026 19:15:41 +0100
+Subject: [PATCH] fix(spiral-fitting): no non_blocking host copies to MPS from
+ pageable temporaries
+
+On MPS a non_blocking copy from pageable host memory returns before the
+source is read, so a temporary freed right after the call (the numpy
+buffers behind PatchAtlas.lookup's indices, the atlas upload staging)
+reaches the GPU corrupted. CUDA stages pageable sources before returning,
+so the code was safe there. Copy non_blocking only on CUDA.
+
+Seen on PHercParis4 z 8500-12500: the theta consistency gate rejected
+537-719 verified patches on MPS (one on CPU) and occasionally raised
+'index 191692825 is out of bounds: 0, range 0 to 33216'. With this change
+MPS rejects the same single patch as CPU.
+---
+ spiral-fitting/fit_spiral.py | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/spiral-fitting/fit_spiral.py b/spiral-fitting/fit_spiral.py
+index 739ec20ec..3c1daccac 100644
+--- a/spiral-fitting/fit_spiral.py
++++ b/spiral-fitting/fit_spiral.py
+@@ -448,7 +448,7 @@ class PatchAtlas:
+                 return
+             staging = torch.cat(pieces, dim=0)
+             resident[offset:offset + staged].copy_(
+-                staging, non_blocking=True)
++                staging, non_blocking=device.type == 'cuda')
+             offset += staged
+             pieces = []
+             staged = 0
+@@ -461,7 +461,7 @@ class PatchAtlas:
+             # advertised staging bound is not exceeded.
+             if len(piece) > staging_limit:
+                 resident[offset:offset + len(piece)].copy_(
+-                    piece, non_blocking=True)
++                    piece, non_blocking=device.type == 'cuda')
+                 offset += len(piece)
+             else:
+                 pieces.append(piece)
+@@ -631,9 +631,13 @@ class PatchAtlas:
+                 bottom = bl + (br - bl) * dj
+                 output[selected] = top + (bottom - top) * di
+             return output.reshape(*shape, 3).to(self.device)
++        # MPS reads a pageable host source after a non_blocking copy returns,
++        # and these sources are often freed temporaries; CUDA stages them first.
++        non_blocking = self.zyxs_flat.device.type == 'cuda'
+         patch_idx_per_sample = patch_idx_per_sample.to(
+-            device=self.zyxs_flat.device, dtype=torch.int64, non_blocking=True)
+-        ijs = ijs.to(device=self.zyxs_flat.device, non_blocking=True)
++            device=self.zyxs_flat.device, dtype=torch.int64,
++            non_blocking=non_blocking)
++        ijs = ijs.to(device=self.zyxs_flat.device, non_blocking=non_blocking)
+         if len(self._geometry_chunks) == 1:
+             chunk = self._geometry_chunks[0]
+             return bilinear_atlas_lookup(
+-- 
+2.54.0 (Apple Git-157)
+
