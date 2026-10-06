@@ -3,8 +3,7 @@
 How far does villa's spiral fitter scale on one Apple Silicon machine? This repo
 runs the fitter's own headless driver on PHercParis4 at five z-ranges, from 1,000
 slices up to the whole written region (13,000 slices). It records time and memory
-for each run, plus two comparison runs. One command reproduces the matrix, and a
-second builds the table and chart from the logs.
+for each run, plus two comparison runs. One command reproduces the matrix, and a second builds the table and chart from the logs.
 
 It holds code, specs and numbers only. There is no scan data, no rendered
 surfaces and no ink in this repo. Inputs are downloaded separately, under the
