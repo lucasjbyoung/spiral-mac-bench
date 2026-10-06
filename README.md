@@ -15,6 +15,8 @@ data agreement at https://dl.ash2txt.org/LICENSE.txt.
 See [results/results.md](results/results.md) (generated) and
 [results/memory_vs_slices.png](results/memory_vs_slices.png).
 
+![Peak memory against z-range on MPS](results/memory_vs_slices.png)
+
 Headline, on villa #1925 plus one local fix (`e69e015`, below):
 
 | Slices | z | Step (median) | Wall | MPS driver peak | Peak footprint | Completed |
@@ -33,6 +35,12 @@ Headline, on villa #1925 plus one local fix (`e69e015`, below):
 
   See [results/comparison-unfixed-vs-fixed.md](results/comparison-unfixed-vs-fixed.md), `patches/`, and [scripts/repro_mps_nonblocking.py](scripts/repro_mps_nonblocking.py) (a 20-line repro independent of villa).
 
+## Upstream status
+
+- The fix is now part of #1925 as commit [`e73fe54`](https://github.com/ScrollPrize/villa/pull/1925/commits/e73fe54bdf8a1eae796aebfed620922ee59c084a), by AndreasHad04 with Lucas Young as co-author. AndreasHad04 reproduced the bug independently on an M1 Max and traced it to a PyTorch bug, [pytorch/pytorch#189690](https://github.com/pytorch/pytorch/issues/189690).
+- torch 2.13 and newer also avoid the bug. In that issue thread the reproducer mismatches on 2.11.0 and 2.12.1 and is exact on 2.13.0 and 2.14.0. The issue is still open, and villa's lock file installs torch 2.11.0, so the fix is still needed there.
+- Every number in this repo was measured at `545c4c0b`, with and without local commit `e69e015`. None was measured at `e73fe54` or on torch 2.13 or newer.
+
 ## Hardware and software
 
 | | |
@@ -40,7 +48,7 @@ Headline, on villa #1925 plus one local fix (`e69e015`, below):
 | Machine | MacBook Pro 16", Apple M5 Max, 18 CPU cores, 40 GPU cores, 128 GB unified memory (Metal 4) |
 | OS | macOS 27.2 (build 26B5091g) |
 | Python / torch / numpy | 3.14.8 / 2.11.0 / 2.5.2 (villa `spiral-fitting/.venv` from `uv sync`) |
-| villa commit tested | `545c4c0bf7b812aae9cf0b1726f8af8b87eda7fd`, the head of open PR [#1925](https://github.com/ScrollPrize/villa/pull/1925) ("spiral-fitting: run on Apple Silicon (MPS) and CPU when CUDA is absent"), plus local commit `e69e0153357be093eb0da7e10230457bee4fec2c` (`patches/0001-*.patch`, MPS-only copy fix). The first pass on the unmodified head is in `results/unfixed-545c4c0b/` |
+| villa commit tested | `545c4c0bf7b812aae9cf0b1726f8af8b87eda7fd`, at the time the head of open PR [#1925](https://github.com/ScrollPrize/villa/pull/1925) ("spiral-fitting: run on Apple Silicon (MPS) and CPU when CUDA is absent"), plus local commit `e69e0153357be093eb0da7e10230457bee4fec2c` (`patches/0001-*.patch`, MPS-only copy fix). The first pass on the unmodified head is in `results/unfixed-545c4c0b/`. Upstream equivalent of `e69e015`: [`e73fe54`](https://github.com/ScrollPrize/villa/pull/1925/commits/e73fe54bdf8a1eae796aebfed620922ee59c084a) in #1925. The two are not byte-identical but run the same code: `git diff e69e015 e73fe54` shows only that `e73fe54` names the 256 MiB staging bound as a module constant, `PATCH_ATLAS_STAGING_BYTES`, with the same value, and adds an MPS test (`test_patch_atlas_upload_on_mps_survives_freed_staging`). The `non_blocking` changes are the same |
 | Driver | `spiral-fitting/tests/headless_fit_driver.py` from that commit: the documented headless fit, as the CLI drives it, with mesh export skipped |
 
 ## What is run
@@ -135,13 +143,28 @@ loss here is not a held-out score.
 
 ## Reproduce
 
-Run from a directory that holds this repo as `spiral-mac-bench/`:
+Run from a directory that holds this repo as `spiral-mac-bench/`.
+
+To run the matrix on the current #1925 head, which already includes the fix (`e73fe54` or later). This has not been measured here, so expect small differences from the tables above:
+
+```sh
+git clone https://github.com/ScrollPrize/villa && cd villa
+gh pr checkout 1925    # or: git fetch origin pull/1925/head && git checkout -b spiral-bench FETCH_HEAD
+cd spiral-fitting && uv sync && cd ../..
+```
+
+To reproduce the passes in this repo exactly, check out the commit they ran on, `545c4c0b`. Applying the patch gives the fixed pass (`e69e015`). Skipping it gives the unfixed pass (`results/unfixed-545c4c0b/`):
 
 ```sh
 git clone https://github.com/ScrollPrize/villa && cd villa
 git fetch origin pull/1925/head && git checkout -b spiral-bench 545c4c0bf7b812aae9cf0b1726f8af8b87eda7fd
 git am ../spiral-mac-bench/patches/0001-spiral-fitting-mps-no-nonblocking-pageable-copies.patch   # skip to reproduce the unfixed pass
 cd spiral-fitting && uv sync && cd ../..
+```
+
+Then, for either checkout:
+
+```sh
 cp spiral-mac-bench/patches/spiral-scroll.PHercParis4.json ~/spiral_datasets/PHercParis4/spiral-scroll.json
 
 SPIRAL_DIR=$PWD/villa/spiral-fitting \
@@ -150,8 +173,10 @@ PYTHON=$PWD/villa/spiral-fitting/.venv/bin/python \
 RUNS_DIR=$PWD/runs \
 spiral-mac-bench/run_matrix.sh        # or name runs: spiral-mac-bench/run_matrix.sh mps_full_z1000 cpu_full_z1000
 
-villa/spiral-fitting/.venv/bin/python spiral-mac-bench/scripts/make_table.py runs spiral-mac-bench/results
+villa/spiral-fitting/.venv/bin/python spiral-mac-bench/scripts/make_table.py runs results-local
 ```
+
+`make_table.py` writes to `results-local/` here so that a new run does not overwrite the committed results, which are labelled with the commits they ran on.
 
 Each run writes `runs/<run>/{run.log, bench.json, driver_result.json, mps_memory_samples.tsv}`.
 Checkpoints are deleted after each run (`KEEP_CHECKPOINTS=1` keeps them).
@@ -178,3 +203,16 @@ Expected runtimes on the machine above (wall, fixed commit): verified patches on
 - `scripts/fetch_inputs.py`: downloads only the needed inputs.
 - `scripts/repro_mps_nonblocking.py`: the MPS copy bug in 20 lines.
 - `patches/`: the villa fix and the `spiral-scroll.json` used.
+- `LICENSE`: MIT, with a note on the villa-derived files in `patches/`.
+
+## Credits and citation
+
+- **Spiral fitter**: Vesuvius Challenge, [villa](https://github.com/ScrollPrize/villa) (`spiral-fitting/`, MIT). This repo only wraps its headless driver.
+- **MPS port**: AndreasHad04, [villa #1925](https://github.com/ScrollPrize/villa/pull/1925). The copy fix in `patches/` is now part of #1925 as `e73fe54`.
+- **Data**: Vesuvius Challenge open data, used under the data licence at https://dl.ash2txt.org/LICENSE.txt. PHercParis4 is Scroll 1. Scroll 1 belongs to the EduceLab-Scrolls dataset, which asks publications using it to cite:
+
+  > Parsons, S., Parker, C. S., Chapman, C., Hayashida, M., and Seales, W. B. (2023). EduceLab-Scrolls: Verifiable Recovery of Text from Herculaneum Papyri using X-ray CT. arXiv:2304.02084. https://doi.org/10.48550/arXiv.2304.02084
+
+  Data used in the preparation of this work were obtained from the EduceLab-Scrolls dataset.
+
+  The spiral inputs are in the frame of the 2026 ESRF scan of PHercParis4 (volume `20260411134726`, 2.4 um, used here at level 2, 9.6 um). The Vesuvius Challenge asks work using its newer scans to cite: Angelotti, G., Parsons, S., Johnson, S., Dal Prà, E. R., Rudolph, J., Tafforeau, P., Mirone, A., Henderson, P., Schilling, H., McDonald, F., Josey, D., Nader, Y., Parker, C. S., and Seales, W. B. Vesuvius Challenge - CT Scans of Herculaneum Papyri. Vesuvius Challenge. See https://scrollprize.org/data.

@@ -73,6 +73,9 @@ def main(dest):
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] in (["-h"], ["--help"]):
+        print(__doc__)
+        sys.exit(0)
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     main(sys.argv[1])

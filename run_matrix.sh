@@ -13,6 +13,10 @@
 # Then: $PYTHON scripts/make_table.py RUNS_DIR results/
 set -uo pipefail
 
+if [ "${1:-}" = -h ] || [ "${1:-}" = --help ]; then
+  sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 0
+fi
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${SPIRAL_DIR:?set SPIRAL_DIR to villa/spiral-fitting at the commit under test}"
 : "${SPIRAL_DATASET:?set SPIRAL_DATASET to the PHercParis4 spiral-input root}"

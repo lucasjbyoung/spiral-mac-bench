@@ -44,6 +44,9 @@ def main(a, b, la, lb):
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] in (['-h'], ['--help']):
+        print(__doc__)
+        sys.exit(0)
     if len(sys.argv) != 5:
         sys.exit(__doc__)
     main(*sys.argv[1:])
